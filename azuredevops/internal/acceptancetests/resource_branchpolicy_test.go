@@ -5,12 +5,41 @@ package acceptancetests
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
 	"github.com/terraform-providers/terraform-provider-azuredevops/azuredevops/internal/acceptancetests/testutils"
 )
+
+func TestAccBranchPolicy_IncorrectParameters(t *testing.T) {
+	buildValidationPolicy := fmt.Sprintf(`
+	%s
+	resource "azuredevops_branch_policy_build_validation" "validation" {
+		project_id = azuredevops_project.project.id
+		settings {
+			display_name = "build validation"
+			build_definition_id = azuredevops_build_definition.build.id
+			scope {
+				repository_ref = azuredevops_git_repository.repository.default_branch
+				match_type     = "exact"
+			}
+		}
+	}`, getProjectRepoBuildUserEntitlementResource())
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:  func() { testutils.PreCheck(t, nil) },
+		Providers: testutils.GetProviders(),
+		Steps: []resource.TestStep{
+			{
+
+				Config:      buildValidationPolicy,
+				ExpectError: regexp.MustCompile(`: "settings\.0\.scope\.0\.repository_ref`),
+			},
+		},
+	})
+}
 
 func TestAccBranchPolicyMinReviewers_CreateAndUpdate(t *testing.T) {
 	minReviewerTfNode := "azuredevops_branch_policy_min_reviewers.p"
@@ -58,33 +87,28 @@ func getMinReviewersHcl(enabled bool, blocking bool, reviewers int, submitterCan
 				match_type     = "exact"
 			}
 		}
-	}
-	`, enabled, blocking, reviewers, submitterCanVote)
+	}`, enabled, blocking, reviewers, submitterCanVote)
 
-	return strings.Join(
-		[]string{
-			getProjectRepoBuildUserEntitlementResource(),
-			minReviewCountPolicy,
-		},
-		"\n",
-	)
+	return fmt.Sprintf("%s\n%s", getProjectRepoBuildUserEntitlementResource(), minReviewCountPolicy)
+
 }
 
 func TestAccBranchPolicyAutoReviewers_CreateAndUpdate(t *testing.T) {
 	autoReviewerTfNode := "azuredevops_branch_policy_auto_reviewers.p"
+	pathFilters := fmt.Sprintf("\"%s\",\"%s\"", "*/API*.cs", "README.md")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:  func() { testutils.PreCheck(t, nil) },
 		Providers: testutils.GetProviders(),
 		Steps: []resource.TestStep{
 			{
-				Config: getAutoReviewersHcl(true, true, false, "auto reviewer", fmt.Sprintf("\"%s\",\"%s\"", "*/API*.cs", "README.md")),
+				Config: getAutoReviewersHcl(true, true, false, "auto reviewer", pathFilters),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr(autoReviewerTfNode, "enabled", "true"),
 					resource.TestCheckResourceAttr(autoReviewerTfNode, "blocking", "true"),
 				),
 			}, {
-				Config: getAutoReviewersHcl(false, false, true, "new auto reviewer", fmt.Sprintf("\"%s\",\"%s\"", "*/API*.cs", "README.md")),
+				Config: getAutoReviewersHcl(false, false, true, "new auto reviewer", pathFilters),
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr(autoReviewerTfNode, "enabled", "false"),
 					resource.TestCheckResourceAttr(autoReviewerTfNode, "blocking", "false"),
@@ -116,16 +140,10 @@ func getAutoReviewersHcl(enabled bool, blocking bool, submitterCanVote bool, mes
 				match_type     = "exact"
 			}
 		}
-	}
-	`, enabled, blocking, submitterCanVote, message, pathFilters)
+	}`, enabled, blocking, submitterCanVote, message, pathFilters)
 
-	return strings.Join(
-		[]string{
-			getProjectRepoBuildUserEntitlementResource(),
-			autoReviewerPolicy,
-		},
-		"\n",
-	)
+	return fmt.Sprintf("%s\n%s", getProjectRepoBuildUserEntitlementResource(), autoReviewerPolicy)
+
 }
 
 func TestAccBranchPolicyBuildValidation_CreateAndUpdate(t *testing.T) {
@@ -177,16 +195,9 @@ func getBuildValidationHcl(enabled bool, blocking bool, displayName string, vali
 				match_type     = "exact"
 			}
 		}
-	}
-	`, enabled, blocking, displayName, validDuration)
+	}`, enabled, blocking, displayName, validDuration)
 
-	return strings.Join(
-		[]string{
-			getProjectRepoBuildUserEntitlementResource(),
-			buildValidationPolicy,
-		},
-		"\n",
-	)
+	return fmt.Sprintf("%s\n%s", getProjectRepoBuildUserEntitlementResource(), buildValidationPolicy)
 }
 
 func getProjectRepoBuildUserEntitlementResource() string {
